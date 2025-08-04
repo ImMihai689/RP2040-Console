@@ -4,15 +4,18 @@
 
 using namespace Console;
 
+void buttontrigger2()
+{
+    Led::set(100, 10);
+}
+
 int main()
 {
     stdio_init_all();
 
-    Led::init();
+    initialize_console_all();
 
-    while(true)
-    {
-        Led::set(100, 400);
-        sleep_ms(1200);
-    }
+    Buttons::subscribe_button(Buttons::BUT_B, buttontrigger2);
+
+    while(true){}
 }

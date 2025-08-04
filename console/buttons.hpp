@@ -1,4 +1,5 @@
 #pragma once
+#include "hardware/timer.h"
 
 namespace Console::Buttons
 {
@@ -11,7 +12,7 @@ namespace Console::Buttons
         BUT_4 = 8,
     };
 
-    const int debounce_ms = 80;
+    const int debounce_ms = 120;
 
     namespace reserved
     {
@@ -22,19 +23,8 @@ namespace Console::Buttons
         void (* callback_3_fall)() = nullptr;
         void (* callback_4_fall)() = nullptr;
 
-        void (* callback_A_rise)() = nullptr;
-        void (* callback_B_rise)() = nullptr;
-        void (* callback_1_rise)() = nullptr;
-        void (* callback_2_rise)() = nullptr;
-        void (* callback_3_rise)() = nullptr;
-        void (* callback_4_rise)() = nullptr;
-
-        uint last_check[6] = {0};
-
-        unsigned int micros()
-        {
-            return get_absolute_time();
-        }
+        volatile uint last_check[6] = {0};
+        volatile bool last_state[6] = {0};
 
         void init_gpio(uint gpio)
         {
@@ -51,12 +41,11 @@ namespace Console::Buttons
             callback_4_fall = nullptr;
             callback_A_fall = nullptr;
             callback_B_fall = nullptr;
-            callback_1_rise = nullptr;
-            callback_2_rise = nullptr;
-            callback_3_rise = nullptr;
-            callback_4_rise = nullptr;
-            callback_A_rise = nullptr;
-            callback_B_rise = nullptr;
+        }
+
+        void update_buttons(uint time)
+        {
+
         }
 
         void gpio_irq(uint gpio, uint32_t event_mask)
@@ -64,62 +53,50 @@ namespace Console::Buttons
             switch(gpio)
             {
                 case BUT_A:
-                    if(last_check[0] + debounce_ms < micros())
+                    if(last_check[0] + debounce_ms < time_us_32())
                     {
-                        last_check[0] = micros();
-                        if(event_mask & GPIO_IRQ_EDGE_RISE)
-                            callback_A_rise();
-                        else if(event_mask & GPIO_IRQ_EDGE_FALL)
+                        last_check[0] = time_us_32();
+                        if(callback_A_fall)
                             callback_A_fall();
                     }
                     break;
                 case BUT_B:
-                    if(last_check[1] + debounce_ms < micros())
+                    if(last_check[1] + debounce_ms < time_us_32())
                     {
-                        last_check[1] = micros();
-                        if(event_mask & GPIO_IRQ_EDGE_RISE)
-                            callback_B_rise();
-                        else if(event_mask & GPIO_IRQ_EDGE_FALL)
+                        last_check[1] = time_us_32();
+                        if(callback_B_fall)
                             callback_B_fall();
                     }
                     break;
                 case BUT_1:
-                    if(last_check[2] + debounce_ms < micros())
+                    if(last_check[2] + debounce_ms < time_us_32())
                     {
-                        last_check[2] = micros();
-                        if(event_mask & GPIO_IRQ_EDGE_RISE)
-                            callback_1_rise();
-                        else if(event_mask & GPIO_IRQ_EDGE_FALL)
+                        last_check[2] = time_us_32();
+                        if(callback_1_fall)
                             callback_1_fall();
                     }
                     break;
                 case BUT_2:
-                    if(last_check[3] + debounce_ms < micros())
+                    if(last_check[3] + debounce_ms < time_us_32())
                     {
-                        last_check[3] = micros();
-                        if(event_mask & GPIO_IRQ_EDGE_RISE)
-                            callback_2_rise();
-                        else if(event_mask & GPIO_IRQ_EDGE_FALL)
+                        last_check[3] = time_us_32();
+                        if(callback_2_fall)
                             callback_2_fall();
                     }
                     break;
                 case BUT_3:
-                    if(last_check[4] + debounce_ms < micros())
+                    if(last_check[4] + debounce_ms < time_us_32())
                     {
-                        last_check[4] = micros();
-                        if(event_mask & GPIO_IRQ_EDGE_RISE)
-                            callback_3_rise();
-                        else if(event_mask & GPIO_IRQ_EDGE_FALL)
+                        last_check[4] = time_us_32();
+                        if(callback_3_fall)
                             callback_3_fall();
                     }
                     break;
                 case BUT_4:
-                    if(last_check[5] + debounce_ms < micros())
+                    if(last_check[5] + debounce_ms < time_us_32())
                     {
-                        last_check[5] = micros();
-                        if(event_mask & GPIO_IRQ_EDGE_RISE)
-                            callback_4_rise();
-                        else if(event_mask & GPIO_IRQ_EDGE_FALL)
+                        last_check[5] = time_us_32();
+                        if(callback_4_fall)
                             callback_4_fall();
                     }
                     break;
@@ -138,58 +115,40 @@ namespace Console::Buttons
         reserved::init_gpio(BUT_3);
         reserved::init_gpio(BUT_4);
 
-        gpio_set_irq_callback(reserved::gpio_irq);
-        gpio_set_irq_enabled(BUT_A, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
-        gpio_set_irq_enabled(BUT_B, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
-        gpio_set_irq_enabled(BUT_1, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
-        gpio_set_irq_enabled(BUT_2, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
-        gpio_set_irq_enabled(BUT_3, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
-        gpio_set_irq_enabled(BUT_4, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
+        //gpio_set_irq_callback(reserved::gpio_irq);
+        gpio_set_irq_enabled_with_callback(BUT_A, GPIO_IRQ_EDGE_FALL, true, reserved::gpio_irq);
+        gpio_set_irq_enabled(BUT_B, GPIO_IRQ_EDGE_FALL, true);
+        gpio_set_irq_enabled(BUT_1, GPIO_IRQ_EDGE_FALL, true);
+        gpio_set_irq_enabled(BUT_2, GPIO_IRQ_EDGE_FALL, true);
+        gpio_set_irq_enabled(BUT_3, GPIO_IRQ_EDGE_FALL, true);
+        gpio_set_irq_enabled(BUT_4, GPIO_IRQ_EDGE_FALL, true);
     }
 
     /// @brief Subscribe to a button, rising or falling 
     /// @param button Which button to subscribe to, from [Buttons::buttons_t]
     /// @param state The state on which to call the callback, true for rising, false for falling
     /// @param callback The callback that is called once every time the button reaches the event
-    void subscribe_button(uint button, bool state, void (*callback)())
+    void subscribe_button(uint button, void (*callback)())
     {
         switch(button)
         {
             case BUT_A:
-                if(state)
-                    reserved::callback_A_rise = callback;
-                else
-                    reserved::callback_A_fall = callback;
+                reserved::callback_A_fall = callback;
                 break;
             case BUT_B:
-                if(state)
-                    reserved::callback_B_rise = callback;
-                else
-                    reserved::callback_B_fall = callback;
+                reserved::callback_B_fall = callback;
                 break;
             case BUT_1:
-                if(state)
-                    reserved::callback_1_rise = callback;
-                else
-                    reserved::callback_1_fall = callback;
+                reserved::callback_1_fall = callback;
                 break;
             case BUT_2:
-                if(state)
-                    reserved::callback_2_rise = callback;
-                else
-                    reserved::callback_2_fall = callback;
+                reserved::callback_2_fall = callback;
                 break;
             case BUT_3:
-                if(state)
-                    reserved::callback_3_rise = callback;
-                else
-                    reserved::callback_3_fall = callback;
+                reserved::callback_3_fall = callback;
                 break;
             case BUT_4:
-                if(state)
-                    reserved::callback_4_rise = callback;
-                else
-                    reserved::callback_4_fall = callback;
+                reserved::callback_4_fall = callback;
                 break;
             default:
                 printf("Warning: Tried to subscribe to non-button! (buttons.hpp)\n");
@@ -199,52 +158,36 @@ namespace Console::Buttons
     /// @brief Unsubscribe from a button, rising or falling
     /// @param button Which button to unsubscribe from, from [Buttons::buttons_t]
     /// @param state The state on which to unsubscribe, true for rising, false for falling
-    void unsubscribe_button(uint button, bool state)
+    void unsubscribe_button(uint button)
     {
         switch(button)
         {
             case BUT_A:
-                if(state)
-                    reserved::callback_A_rise = nullptr;
-                else
-                    reserved::callback_A_fall = nullptr;
+                reserved::callback_A_fall = nullptr;
                 break;
             case BUT_B:
-                if(state)
-                    reserved::callback_B_rise = nullptr;
-                else
-                    reserved::callback_B_fall = nullptr;
+                reserved::callback_B_fall = nullptr;
                 break;
             case BUT_1:
-                if(state)
-                    reserved::callback_1_rise = nullptr;
-                else
-                    reserved::callback_1_fall = nullptr;
+                reserved::callback_1_fall = nullptr;
                 break;
             case BUT_2:
-                if(state)
-                    reserved::callback_2_rise = nullptr;
-                else
-                    reserved::callback_2_fall = nullptr;
+                reserved::callback_2_fall = nullptr;
                 break;
             case BUT_3:
-                if(state)
-                    reserved::callback_3_rise = nullptr;
-                else
-                    reserved::callback_3_fall = nullptr;
+                reserved::callback_3_fall = nullptr;
                 break;
             case BUT_4:
-                if(state)
-                    reserved::callback_4_rise = nullptr;
-                else
-                    reserved::callback_4_fall = nullptr;
+                reserved::callback_4_fall = nullptr;
                 break;
             default:
                 printf("Warning: Tried to unsubscribe to non-button! (buttons.hpp)\n");
         }
     }
 
-    void cancel_all_callbacks()
+    /// @brief Unsubscribe everything from all buttons
+    /// @note You should call this before subscribing a set of callbacks to avoid calling unintended functions
+    void unsubscribe_all()
     {
         reserved::reset_callbacks();
     }

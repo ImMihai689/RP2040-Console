@@ -3,21 +3,31 @@
 #include <hardware/pwm.h>
 #include <pico/time.h>
 
+/// @brief The Console::Led namespace is made to be able to interface with the
+///        onboard LED intuitively
+/// @attention The Console::Led namespace uses alarm 3 of the RP2040
 namespace Console::Led
 {
     #define LED 12
 
     namespace reserved
     {
-        int alarm_id = -1;
+        const uint alarm_num = 3;
+        void (*user_callback)();
 
-        long long led_off_callback(alarm_id_t id, void *user_data)
+        void led_off_callback(__unused uint alarm_id)
         {
             pwm_set_gpio_level(LED, 0);
-            if(user_data != nullptr)
-                ((void (*)(void))user_data)();
-            alarm_id = -1;
-            return 0;
+            if(user_callback != nullptr)
+            {
+                ((void (*)(void))user_callback)();
+                user_callback = nullptr;
+            }
+        }
+
+        void update_led(uint time)
+        {
+            
         }
     }
 
@@ -30,6 +40,9 @@ namespace Console::Led
         pwm_set_clkdiv(slice_num, 16.f);
         pwm_set_enabled(slice_num, true);
         pwm_set_gpio_level(LED, 0);
+
+        hardware_alarm_claim(reserved::alarm_num);
+        hardware_alarm_set_callback(reserved::alarm_num, reserved::led_off_callback);
     }
 
     /// @brief Set the onboard LED to the given value
@@ -52,25 +65,19 @@ namespace Console::Led
         if(ms < 0)
             ms = -ms;
         
-        if(reserved::alarm_id != -1)
-            if(!cancel_alarm(reserved::alarm_id))
-                printf("Warning: Tried to cancel alarm that didn't exist! (led.hpp)\n");
+        if(reserved::user_callback != nullptr)
+            reserved::user_callback();
+        
+        hardware_alarm_set_target(reserved::alarm_num, time_us_32() + ms * 1000);
+        
 
-        int id = add_alarm_in_ms(ms, reserved::led_off_callback, nullptr, false);
-
-        reserved::alarm_id = id;
-
-        if(id >= 0)
-        {
-            if(val < 0)
-                pwm_set_gpio_level(LED, 0);
-            else if(val > 100)
-                pwm_set_gpio_level(LED, 100);
-            else
-                pwm_set_gpio_level(LED, val);
-        }
+        if(val < 0)
+            pwm_set_gpio_level(LED, 0);
+        else if(val > 100)
+            pwm_set_gpio_level(LED, 100);
         else
-            printf("Warning: No available alarms for onboard LED! (led.hpp)\n");
+            pwm_set_gpio_level(LED, val);
+        
     }
 
     /// @brief Set the onboard LED to the given value for given milliseconds
@@ -81,25 +88,19 @@ namespace Console::Led
     {
         if(ms < 0)
             ms = -ms;
-        
-        if(reserved::alarm_id != -1)
-            if(!cancel_alarm(reserved::alarm_id))
-                printf("Warning: Tried to cancel alarm that didn't exist! (led.hpp)\n");
 
-        int id = add_alarm_in_ms(ms, reserved::led_off_callback, (void *)callback, false);
+        if(reserved::user_callback != nullptr)
+            reserved::user_callback();
+        reserved::user_callback = callback;
 
-        reserved::alarm_id = id;
+        hardware_alarm_set_target(reserved::alarm_num, time_us_32() + ms * 1000);
 
-        if(id >= 0)
-        {
-            if(val < 0)
-                pwm_set_gpio_level(LED, 0);
-            else if(val > 100)
-                pwm_set_gpio_level(LED, 100);
-            else
-                pwm_set_gpio_level(LED, val);
-        }
+        if(val < 0)
+            pwm_set_gpio_level(LED, 0);
+        else if(val > 100)
+            pwm_set_gpio_level(LED, 100);
         else
-            printf("Warning: No available alarms for onboard LED! (led.hpp)");
+            pwm_set_gpio_level(LED, val);
+    
     }
 }
