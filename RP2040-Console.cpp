@@ -10,18 +10,6 @@ int main()
 
     Led::init();
 
-    
-
-    void *h;
-    float b = 6;
-    int c = 7;
-
-    h = &b;
-
-    c = *(int *)h;
-
-    printf("%d", c);
-
     while(true)
     {
         Led::set(100, 400);
