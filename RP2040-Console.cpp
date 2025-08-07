@@ -1,21 +1,12 @@
-#include "globals.hpp"
-
+#include "console/common.hpp"
 #include "console/main.hpp"
-
-using namespace Console;
-
-void buttontrigger2()
-{
-    Led::set(100, 10);
-}
 
 int main()
 {
     stdio_init_all();
 
-    initialize_console_all();
-
-    Buttons::subscribe_button(Buttons::BUT_B, buttontrigger2);
-
-    while(true){}
+    while(true){
+        printf("PI is %f, TwoPI is %f, HalfPI is %f\n", (double)Fixed(PI_FIXED_INT, true), (double)Fixed(TWO_PI_FIXED_INT, true), (double)Fixed(HALF_PI_FIXED_INT, true) );
+        sleep_ms(1000);
+    }
 }
