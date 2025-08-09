@@ -35,7 +35,11 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(RP2040-Console RP2040-Console.cpp )
+add_executable(RP2040-Console 
+    RP2040-Console.cpp 
+    console/display.cpp
+    console/frame.cpp
+)
 
 pico_set_program_name(RP2040-Console "RP2040-Console")
 pico_set_program_version(RP2040-Console "0.1")
@@ -51,6 +55,7 @@ target_link_libraries(RP2040-Console
 # Add the standard include files to the build
 target_include_directories(RP2040-Console PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/console
 )
 
 # Add any user requested libraries

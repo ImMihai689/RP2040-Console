@@ -84,14 +84,14 @@ class Fixed
             return temp;
         }
  
-        Fixed operator -(Fixed other)
+        Fixed operator -(const Fixed& other)
         {
             Fixed temp;
             temp.value = value - other.value;
             return temp;
         }
 
-        Fixed operator *(Fixed other)
+        Fixed operator *(const Fixed& other)
         {
             Fixed temp;
 
@@ -100,7 +100,7 @@ class Fixed
             return temp;
         }
 
-        Fixed operator /(Fixed other)
+        Fixed operator /(const Fixed& other)
         {
             Fixed temp;
 
@@ -110,25 +110,25 @@ class Fixed
         }
         
 
-        inline Fixed operator +=(Fixed other)
+        inline Fixed operator +=(const Fixed& other)
         {
             value += other.value;
             return *this;
         }
 
-        inline Fixed operator -=(Fixed other)
+        inline Fixed operator -=(const Fixed& other)
         {
             value -= other.value;
             return *this;
         }
 
-        inline Fixed operator *=(Fixed other)
+        inline Fixed operator *=(const Fixed& other)
         {
             value = (int)((((signed long long)(value)) * ((signed long long)(other.value))) >> FIXED_DECIMALS);
             return *this;
         }
 
-        inline Fixed operator /=(Fixed other)
+        inline Fixed operator /=(const Fixed& other)
         {   
             value = (int)((((signed long long)(value)) << FIXED_DECIMALS) / (signed long long)other.value);
             return *this;
@@ -323,32 +323,32 @@ class Fixed
         
         // Comparasion (Fixed on Fixed)
 
-        inline bool operator ==(Fixed other)
+        inline bool operator ==(const Fixed& other)
         {
             return (value == other.value);
         }
 
-        inline bool operator !=(Fixed other)
+        inline bool operator !=(const Fixed& other)
         {
             return (value != other.value);
         }
 
-        inline bool operator >(Fixed other)
+        inline bool operator >(const Fixed& other)
         {
             return (value > other.value);
         }
 
-        inline bool operator <(Fixed other)
+        inline bool operator <(const Fixed& other)
         {
             return (value < other.value);
         }
 
-        inline bool operator >=(Fixed other)
+        inline bool operator >=(const Fixed& other)
         {
             return (value >= other.value);
         }
 
-        inline bool operator <=(Fixed other)
+        inline bool operator <=(const Fixed& other)
         {
             return (value <= other.value);
         }
@@ -476,7 +476,7 @@ class Fixed
 
         inline int ceil2int()
         {
-            int decimals = value & 0b111111111111111111;
+            int decimals = value & (FIXED_UNIT - 1);
 
             int floored = value >> FIXED_DECIMALS;
 
@@ -491,6 +491,11 @@ class Fixed
             return (value + FIXED_HALF) >> FIXED_DECIMALS;
         }
 
+        inline Fixed decimals()
+        {
+            return Fixed(value & (FIXED_UNIT - 1), true);
+        }
+
 
 
 
@@ -501,75 +506,328 @@ class Fixed
         /// @param min2 
         /// @param max2 
         /// @return 
-        static Fixed map(Fixed val, Fixed min1, Fixed max1, Fixed min2, Fixed max2);
-
-        static Fixed inverse_sqrt(Fixed number);
-
-
-        inline static Fixed sin(Fixed angle)
+        static Fixed map(Fixed val, Fixed min1, Fixed max1, Fixed min2, Fixed max2)
         {
-            int temp_val = angle.value % TWO_PI_FIXED_INT;
-            Fixed apropriate = Fixed(temp_val, true);
-            return evaluate_sin(apropriate);
+            return min2 + (val - min1) * (max2 - min2) / (max1 - min1);
         }
 
-        inline static Fixed cos(Fixed angle)
+        static Fixed inverse_sqrt(Fixed number)
         {
-            int temp_val = (angle.value + HALF_PI_FIXED_INT) % TWO_PI_FIXED_INT;
-            Fixed apropriate = Fixed(temp_val, true);
-            return evaluate_sin(apropriate);
+            float floating = (float)number.value / (float)FIXED_UNIT;
+            long i;
+            float x2, y;
+            const float threehalfs = 1.5F;
+
+            x2 = floating * 0.5F;
+            y  = floating;
+            i  = * ( long * ) &y;                       // evil floating point bit level hacking
+            i  = 0x5f3759df - ( i >> 1 );               // what the fuck?
+            y  = * ( float * ) &i;
+            y  = y * ( threehalfs - ( x2 * y * y ) );   // 1st iteration
+            y  = y * ( threehalfs - ( x2 * y * y ) );   // 2nd iteration, this can be removed
+
+            return Fixed(y);
+        }
+
+        static Fixed sin(const Fixed& angle)
+        {
+            Fixed trimmed = Fixed(angle.value % TWO_PI_FIXED_INT, true);
+            bool neg = false;
+            if(trimmed.value < 0)
+            {
+                trimmed.value = -trimmed.value;
+                neg = true;
+            }
+            
+            Fixed lut_position = trimmed * (256 / TWO_PI);
+
+            int lut_addr = lut_position.floor2int() & 255;
+            int lut_addr_ = (lut_addr + 1) & 255;
+
+            Fixed frac = lut_position.decimals();
+
+            if(!neg)
+                return Fixed(frac.sin_lut[lut_addr] + (int)(frac * (frac.sin_lut[lut_addr_] - frac.sin_lut[lut_addr])), true);
+            else
+                return -Fixed(frac.sin_lut[lut_addr] + (int)(frac * (frac.sin_lut[lut_addr_] - frac.sin_lut[lut_addr])), true);
+        }
+
+        static Fixed cos(const Fixed& angle)
+        {
+            Fixed trimmed = Fixed((angle.value + HALF_PI_FIXED_INT) % TWO_PI_FIXED_INT, true);
+            if(trimmed.value < 0)
+                trimmed.value = -trimmed.value;
+            
+            Fixed lut_position = trimmed * (256 / TWO_PI);
+
+            int lut_addr = lut_position.floor2int() & 255;
+            int lut_addr_ = (lut_addr + 1) & 255;
+
+            Fixed frac = lut_position.decimals();
+
+            return Fixed(Fixed::sin_lut[lut_addr] + (int)(frac * (Fixed::sin_lut[lut_addr_] - Fixed::sin_lut[lut_addr])), true);
         }
     
-    private:
-
-        
-        static Fixed evaluate_sin(Fixed angle)
+        static constexpr int sin_lut[256] = 
         {
-            bool flip_sign = false;
-
-            if(angle.value < -TWO_PI_FIXED_INT || angle.value > TWO_PI_FIXED_INT)
-                return Fixed(-1);
-            
-            if(angle.value < 0)
-            {
-                flip_sign = true;
-                angle.value = -angle.value;
-            }
-
-            if(angle.value > PI_FIXED_INT)
-            {
-                flip_sign = !flip_sign;
-                angle.value -= PI_FIXED_INT;
-            }
-            
-            if(angle.value > HALF_PI_FIXED_INT)
-            {
-                angle.value = HALF_PI_FIXED_INT - (angle.value - HALF_PI_FIXED_INT);
-            }
-
-            Fixed result = Fixed();
-            
-            if(angle.value < (int)235373)
-            {
-                result.value = angle.value;
-                result = result - (angle * angle * angle) / (int)6;
-                result = result + (angle * angle * angle * angle * angle) / (int)120;
-                result = result - (angle * angle * angle * angle * angle * angle * angle) / (int)5040;
-            }
-            else
-            {
-                Fixed sincos_angle = Fixed(HALF_PI_FIXED_INT - angle.value, true);
-                result.value = FIXED_UNIT;
-                result = result - (sincos_angle * sincos_angle) / (int)2;
-                result = result + (sincos_angle * sincos_angle * sincos_angle * sincos_angle) / (int)24;
-                result = result - (sincos_angle * sincos_angle * sincos_angle * sincos_angle * sincos_angle * sincos_angle) / (int)720;
-            }
-
-            if(flip_sign)
-                return -result;
-            
-            return result;
-        }
+            (int)( 0.0 * FIXED_UNIT ), 
+            (int)( 0.024541228522912288 * FIXED_UNIT ), 
+            (int)( 0.049067674327418015 * FIXED_UNIT ), 
+            (int)( 0.07356456359966743 * FIXED_UNIT ), 
+            (int)( 0.0980171403295606 * FIXED_UNIT ), 
+            (int)( 0.1224106751992162 * FIXED_UNIT ), 
+            (int)( 0.14673047445536175 * FIXED_UNIT ), 
+            (int)( 0.17096188876030122 * FIXED_UNIT ), 
+            (int)( 0.19509032201612825 * FIXED_UNIT ), 
+            (int)( 0.2191012401568698 * FIXED_UNIT ), 
+            (int)( 0.24298017990326387 * FIXED_UNIT ), 
+            (int)( 0.26671275747489837 * FIXED_UNIT ), 
+            (int)( 0.29028467725446233 * FIXED_UNIT ), 
+            (int)( 0.3136817403988915 * FIXED_UNIT ), 
+            (int)( 0.33688985339222005 * FIXED_UNIT ), 
+            (int)( 0.3598950365349881 * FIXED_UNIT ), 
+            (int)( 0.3826834323650898 * FIXED_UNIT ), 
+            (int)( 0.40524131400498986 * FIXED_UNIT ), 
+            (int)( 0.4275550934302821 * FIXED_UNIT ), 
+            (int)( 0.44961132965460654 * FIXED_UNIT ), 
+            (int)( 0.47139673682599764 * FIXED_UNIT ), 
+            (int)( 0.49289819222978404 * FIXED_UNIT ), 
+            (int)( 0.5141027441932217 * FIXED_UNIT ), 
+            (int)( 0.5349976198870972 * FIXED_UNIT ), 
+            (int)( 0.5555702330196022 * FIXED_UNIT ), 
+            (int)( 0.5758081914178453 * FIXED_UNIT ), 
+            (int)( 0.5956993044924334 * FIXED_UNIT ), 
+            (int)( 0.6152315905806268 * FIXED_UNIT ), 
+            (int)( 0.6343932841636455 * FIXED_UNIT ), 
+            (int)( 0.6531728429537768 * FIXED_UNIT ), 
+            (int)( 0.6715589548470183 * FIXED_UNIT ), 
+            (int)( 0.6895405447370668 * FIXED_UNIT ), 
+            (int)( 0.7071067811865475 * FIXED_UNIT ), 
+            (int)( 0.7242470829514669 * FIXED_UNIT ), 
+            (int)( 0.7409511253549591 * FIXED_UNIT ), 
+            (int)( 0.7572088465064845 * FIXED_UNIT ), 
+            (int)( 0.773010453362737 * FIXED_UNIT ), 
+            (int)( 0.7883464276266062 * FIXED_UNIT ), 
+            (int)( 0.8032075314806448 * FIXED_UNIT ), 
+            (int)( 0.8175848131515837 * FIXED_UNIT ), 
+            (int)( 0.8314696123025452 * FIXED_UNIT ), 
+            (int)( 0.844853565249707 * FIXED_UNIT ), 
+            (int)( 0.8577286100002721 * FIXED_UNIT ), 
+            (int)( 0.8700869911087113 * FIXED_UNIT ), 
+            (int)( 0.8819212643483549 * FIXED_UNIT ), 
+            (int)( 0.8932243011955153 * FIXED_UNIT ), 
+            (int)( 0.9039892931234433 * FIXED_UNIT ), 
+            (int)( 0.9142097557035307 * FIXED_UNIT ), 
+            (int)( 0.9238795325112867 * FIXED_UNIT ), 
+            (int)( 0.9329927988347388 * FIXED_UNIT ), 
+            (int)( 0.9415440651830208 * FIXED_UNIT ), 
+            (int)( 0.9495281805930367 * FIXED_UNIT ), 
+            (int)( 0.9569403357322089 * FIXED_UNIT ), 
+            (int)( 0.9637760657954398 * FIXED_UNIT ), 
+            (int)( 0.970031253194544 * FIXED_UNIT ), 
+            (int)( 0.9757021300385286 * FIXED_UNIT ), 
+            (int)( 0.9807852804032304 * FIXED_UNIT ), 
+            (int)( 0.9852776423889412 * FIXED_UNIT ), 
+            (int)( 0.989176509964781 * FIXED_UNIT ), 
+            (int)( 0.99247953459871 * FIXED_UNIT ), 
+            (int)( 0.9951847266721968 * FIXED_UNIT ), 
+            (int)( 0.9972904566786902 * FIXED_UNIT ), 
+            (int)( 0.9987954562051724 * FIXED_UNIT ), 
+            (int)( 0.9996988186962042 * FIXED_UNIT ), 
+            (int)( 1.0 * FIXED_UNIT ), 
+            (int)( 0.9996988186962042 * FIXED_UNIT ), 
+            (int)( 0.9987954562051724 * FIXED_UNIT ), 
+            (int)( 0.9972904566786902 * FIXED_UNIT ), 
+            (int)( 0.9951847266721969 * FIXED_UNIT ), 
+            (int)( 0.99247953459871 * FIXED_UNIT ), 
+            (int)( 0.989176509964781 * FIXED_UNIT ), 
+            (int)( 0.9852776423889412 * FIXED_UNIT ), 
+            (int)( 0.9807852804032304 * FIXED_UNIT ), 
+            (int)( 0.9757021300385286 * FIXED_UNIT ), 
+            (int)( 0.970031253194544 * FIXED_UNIT ), 
+            (int)( 0.9637760657954398 * FIXED_UNIT ), 
+            (int)( 0.9569403357322089 * FIXED_UNIT ), 
+            (int)( 0.9495281805930367 * FIXED_UNIT ), 
+            (int)( 0.9415440651830208 * FIXED_UNIT ), 
+            (int)( 0.9329927988347388 * FIXED_UNIT ), 
+            (int)( 0.9238795325112867 * FIXED_UNIT ), 
+            (int)( 0.9142097557035307 * FIXED_UNIT ), 
+            (int)( 0.9039892931234434 * FIXED_UNIT ), 
+            (int)( 0.8932243011955152 * FIXED_UNIT ), 
+            (int)( 0.881921264348355 * FIXED_UNIT ), 
+            (int)( 0.8700869911087115 * FIXED_UNIT ), 
+            (int)( 0.8577286100002721 * FIXED_UNIT ), 
+            (int)( 0.8448535652497072 * FIXED_UNIT ), 
+            (int)( 0.8314696123025455 * FIXED_UNIT ), 
+            (int)( 0.8175848131515837 * FIXED_UNIT ), 
+            (int)( 0.8032075314806449 * FIXED_UNIT ), 
+            (int)( 0.7883464276266063 * FIXED_UNIT ), 
+            (int)( 0.7730104533627371 * FIXED_UNIT ), 
+            (int)( 0.7572088465064847 * FIXED_UNIT ), 
+            (int)( 0.740951125354959 * FIXED_UNIT ), 
+            (int)( 0.7242470829514669 * FIXED_UNIT ), 
+            (int)( 0.7071067811865476 * FIXED_UNIT ), 
+            (int)( 0.689540544737067 * FIXED_UNIT ), 
+            (int)( 0.6715589548470186 * FIXED_UNIT ), 
+            (int)( 0.6531728429537766 * FIXED_UNIT ), 
+            (int)( 0.6343932841636455 * FIXED_UNIT ), 
+            (int)( 0.6152315905806269 * FIXED_UNIT ), 
+            (int)( 0.5956993044924335 * FIXED_UNIT ), 
+            (int)( 0.5758081914178454 * FIXED_UNIT ), 
+            (int)( 0.5555702330196022 * FIXED_UNIT ), 
+            (int)( 0.5349976198870972 * FIXED_UNIT ), 
+            (int)( 0.5141027441932218 * FIXED_UNIT ), 
+            (int)( 0.49289819222978415 * FIXED_UNIT ), 
+            (int)( 0.47139673682599786 * FIXED_UNIT ), 
+            (int)( 0.4496113296546069 * FIXED_UNIT ), 
+            (int)( 0.42755509343028203 * FIXED_UNIT ), 
+            (int)( 0.4052413140049899 * FIXED_UNIT ), 
+            (int)( 0.3826834323650899 * FIXED_UNIT ), 
+            (int)( 0.35989503653498833 * FIXED_UNIT ), 
+            (int)( 0.33688985339222033 * FIXED_UNIT ), 
+            (int)( 0.3136817403988914 * FIXED_UNIT ), 
+            (int)( 0.2902846772544624 * FIXED_UNIT ), 
+            (int)( 0.2667127574748985 * FIXED_UNIT ), 
+            (int)( 0.24298017990326407 * FIXED_UNIT ), 
+            (int)( 0.21910124015687005 * FIXED_UNIT ), 
+            (int)( 0.1950903220161286 * FIXED_UNIT ), 
+            (int)( 0.17096188876030122 * FIXED_UNIT ), 
+            (int)( 0.1467304744553618 * FIXED_UNIT ), 
+            (int)( 0.12241067519921635 * FIXED_UNIT ), 
+            (int)( 0.09801714032956083 * FIXED_UNIT ), 
+            (int)( 0.07356456359966773 * FIXED_UNIT ), 
+            (int)( 0.049067674327417966 * FIXED_UNIT ), 
+            (int)( 0.024541228522912326 * FIXED_UNIT ), 
+            (int)( 1.2246467991473532e-16 * FIXED_UNIT ), 
+            (int)( -0.02454122852291208 * FIXED_UNIT ), 
+            (int)( -0.049067674327417724 * FIXED_UNIT ), 
+            (int)( -0.0735645635996675 * FIXED_UNIT ), 
+            (int)( -0.09801714032956059 * FIXED_UNIT ), 
+            (int)( -0.1224106751992161 * FIXED_UNIT ), 
+            (int)( -0.14673047445536158 * FIXED_UNIT ), 
+            (int)( -0.17096188876030097 * FIXED_UNIT ), 
+            (int)( -0.19509032201612836 * FIXED_UNIT ), 
+            (int)( -0.2191012401568698 * FIXED_UNIT ), 
+            (int)( -0.24298017990326382 * FIXED_UNIT ), 
+            (int)( -0.26671275747489825 * FIXED_UNIT ), 
+            (int)( -0.2902846772544621 * FIXED_UNIT ), 
+            (int)( -0.3136817403988912 * FIXED_UNIT ), 
+            (int)( -0.3368898533922201 * FIXED_UNIT ), 
+            (int)( -0.3598950365349881 * FIXED_UNIT ), 
+            (int)( -0.38268343236508967 * FIXED_UNIT ), 
+            (int)( -0.4052413140049897 * FIXED_UNIT ), 
+            (int)( -0.4275550934302818 * FIXED_UNIT ), 
+            (int)( -0.44961132965460665 * FIXED_UNIT ), 
+            (int)( -0.47139673682599764 * FIXED_UNIT ), 
+            (int)( -0.4928981922297839 * FIXED_UNIT ), 
+            (int)( -0.5141027441932216 * FIXED_UNIT ), 
+            (int)( -0.5349976198870969 * FIXED_UNIT ), 
+            (int)( -0.555570233019602 * FIXED_UNIT ), 
+            (int)( -0.5758081914178453 * FIXED_UNIT ), 
+            (int)( -0.5956993044924332 * FIXED_UNIT ), 
+            (int)( -0.6152315905806267 * FIXED_UNIT ), 
+            (int)( -0.6343932841636453 * FIXED_UNIT ), 
+            (int)( -0.6531728429537765 * FIXED_UNIT ), 
+            (int)( -0.6715589548470184 * FIXED_UNIT ), 
+            (int)( -0.6895405447370668 * FIXED_UNIT ), 
+            (int)( -0.7071067811865475 * FIXED_UNIT ), 
+            (int)( -0.7242470829514668 * FIXED_UNIT ), 
+            (int)( -0.7409511253549589 * FIXED_UNIT ), 
+            (int)( -0.7572088465064842 * FIXED_UNIT ), 
+            (int)( -0.7730104533627367 * FIXED_UNIT ), 
+            (int)( -0.7883464276266059 * FIXED_UNIT ), 
+            (int)( -0.803207531480645 * FIXED_UNIT ), 
+            (int)( -0.8175848131515838 * FIXED_UNIT ), 
+            (int)( -0.8314696123025452 * FIXED_UNIT ), 
+            (int)( -0.844853565249707 * FIXED_UNIT ), 
+            (int)( -0.857728610000272 * FIXED_UNIT ), 
+            (int)( -0.8700869911087113 * FIXED_UNIT ), 
+            (int)( -0.8819212643483549 * FIXED_UNIT ), 
+            (int)( -0.8932243011955152 * FIXED_UNIT ), 
+            (int)( -0.9039892931234431 * FIXED_UNIT ), 
+            (int)( -0.9142097557035305 * FIXED_UNIT ), 
+            (int)( -0.9238795325112865 * FIXED_UNIT ), 
+            (int)( -0.932992798834739 * FIXED_UNIT ), 
+            (int)( -0.9415440651830208 * FIXED_UNIT ), 
+            (int)( -0.9495281805930367 * FIXED_UNIT ), 
+            (int)( -0.9569403357322088 * FIXED_UNIT ), 
+            (int)( -0.9637760657954398 * FIXED_UNIT ), 
+            (int)( -0.970031253194544 * FIXED_UNIT ), 
+            (int)( -0.9757021300385285 * FIXED_UNIT ), 
+            (int)( -0.9807852804032303 * FIXED_UNIT ), 
+            (int)( -0.9852776423889411 * FIXED_UNIT ), 
+            (int)( -0.9891765099647809 * FIXED_UNIT ), 
+            (int)( -0.9924795345987101 * FIXED_UNIT ), 
+            (int)( -0.9951847266721969 * FIXED_UNIT ), 
+            (int)( -0.9972904566786902 * FIXED_UNIT ), 
+            (int)( -0.9987954562051724 * FIXED_UNIT ), 
+            (int)( -0.9996988186962042 * FIXED_UNIT ), 
+            (int)( -1.0 * FIXED_UNIT ), 
+            (int)( -0.9996988186962042 * FIXED_UNIT ), 
+            (int)( -0.9987954562051724 * FIXED_UNIT ), 
+            (int)( -0.9972904566786902 * FIXED_UNIT ), 
+            (int)( -0.9951847266721969 * FIXED_UNIT ), 
+            (int)( -0.9924795345987101 * FIXED_UNIT ), 
+            (int)( -0.9891765099647809 * FIXED_UNIT ), 
+            (int)( -0.9852776423889412 * FIXED_UNIT ), 
+            (int)( -0.9807852804032304 * FIXED_UNIT ), 
+            (int)( -0.9757021300385286 * FIXED_UNIT ), 
+            (int)( -0.970031253194544 * FIXED_UNIT ), 
+            (int)( -0.96377606579544 * FIXED_UNIT ), 
+            (int)( -0.9569403357322089 * FIXED_UNIT ), 
+            (int)( -0.9495281805930368 * FIXED_UNIT ), 
+            (int)( -0.9415440651830209 * FIXED_UNIT ), 
+            (int)( -0.9329927988347391 * FIXED_UNIT ), 
+            (int)( -0.9238795325112866 * FIXED_UNIT ), 
+            (int)( -0.9142097557035306 * FIXED_UNIT ), 
+            (int)( -0.9039892931234433 * FIXED_UNIT ), 
+            (int)( -0.8932243011955153 * FIXED_UNIT ), 
+            (int)( -0.881921264348355 * FIXED_UNIT ), 
+            (int)( -0.8700869911087115 * FIXED_UNIT ), 
+            (int)( -0.8577286100002722 * FIXED_UNIT ), 
+            (int)( -0.8448535652497072 * FIXED_UNIT ), 
+            (int)( -0.8314696123025455 * FIXED_UNIT ), 
+            (int)( -0.817584813151584 * FIXED_UNIT ), 
+            (int)( -0.8032075314806453 * FIXED_UNIT ), 
+            (int)( -0.7883464276266061 * FIXED_UNIT ), 
+            (int)( -0.7730104533627369 * FIXED_UNIT ), 
+            (int)( -0.7572088465064846 * FIXED_UNIT ), 
+            (int)( -0.7409511253549591 * FIXED_UNIT ), 
+            (int)( -0.724247082951467 * FIXED_UNIT ), 
+            (int)( -0.7071067811865477 * FIXED_UNIT ), 
+            (int)( -0.6895405447370672 * FIXED_UNIT ), 
+            (int)( -0.6715589548470187 * FIXED_UNIT ), 
+            (int)( -0.6531728429537771 * FIXED_UNIT ), 
+            (int)( -0.6343932841636459 * FIXED_UNIT ), 
+            (int)( -0.6152315905806274 * FIXED_UNIT ), 
+            (int)( -0.5956993044924332 * FIXED_UNIT ), 
+            (int)( -0.5758081914178452 * FIXED_UNIT ), 
+            (int)( -0.5555702330196022 * FIXED_UNIT ), 
+            (int)( -0.5349976198870973 * FIXED_UNIT ), 
+            (int)( -0.5141027441932219 * FIXED_UNIT ), 
+            (int)( -0.49289819222978426 * FIXED_UNIT ), 
+            (int)( -0.4713967368259979 * FIXED_UNIT ), 
+            (int)( -0.449611329654607 * FIXED_UNIT ), 
+            (int)( -0.42755509343028253 * FIXED_UNIT ), 
+            (int)( -0.4052413140049904 * FIXED_UNIT ), 
+            (int)( -0.3826834323650904 * FIXED_UNIT ), 
+            (int)( -0.359895036534988 * FIXED_UNIT ), 
+            (int)( -0.33688985339222 * FIXED_UNIT ), 
+            (int)( -0.3136817403988915 * FIXED_UNIT ), 
+            (int)( -0.2902846772544625 * FIXED_UNIT ), 
+            (int)( -0.2667127574748986 * FIXED_UNIT ), 
+            (int)( -0.24298017990326418 * FIXED_UNIT ), 
+            (int)( -0.21910124015687016 * FIXED_UNIT ), 
+            (int)( -0.19509032201612872 * FIXED_UNIT ), 
+            (int)( -0.17096188876030177 * FIXED_UNIT ), 
+            (int)( -0.1467304744553624 * FIXED_UNIT ), 
+            (int)( -0.12241067519921603 * FIXED_UNIT ), 
+            (int)( -0.0980171403295605 * FIXED_UNIT ), 
+            (int)( -0.07356456359966741 * FIXED_UNIT ), 
+            (int)( -0.04906767432741809 * FIXED_UNIT ), 
+            (int)( -0.024541228522912448 * FIXED_UNIT ), 
+        };
+        
 
 };
 
